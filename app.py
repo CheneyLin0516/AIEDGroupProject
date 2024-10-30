@@ -8,6 +8,10 @@ from langchain.memory import ConversationBufferMemory
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_community.vectorstores import Chroma
+from crewai_tools import PDFSearchTool
+
+from langchain_openai import ChatOpenAI
+
 
 import chainlit as cl
 import os
@@ -19,12 +23,15 @@ embeddings = GoogleGenerativeAIEmbeddings(
     api_key=google_api_key
 )
 
-groq_api_key = os.getenv("GROQ_API_KEY")
-chat_model = ChatGroq(
-    model="mixtral-8x7b-32768", 
-    api_key=groq_api_key,
-    streaming=True
+
+llm = ChatOpenAI(
+    openai_api_base="https://api.groq.com/openai/v1",
+    openai_api_key=os.environ['GROQ_API_KEY'],
+    model_name="llama3-8b-8192",
+    temperature=0,
+    max_tokens=1000,
 )
+
 #Test API key
 #GROQ_API_KEY=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
 #GOOGLE_API_KEY=AIzaSyCUU8pGrORw3LX9AJ0BciRozCgJX9K-T7k
@@ -35,8 +42,9 @@ async def on_chat_start():
     #need to modify
 
     #### Ask for the PDF upload
+    #use tool to read the documents
     files = None
-    while files is None:
+    while files is None: 
         files = await cl.AskFileMessage(
             content="Hi there! Very happy to meet you here. Can you upload the materials of this week?",
             accept=["application/pdf"],
@@ -46,30 +54,33 @@ async def on_chat_start():
 
     file = files[0]
     path = file.path
+    pdf_search_tool = PDFSearchTool(pdf=path)
 
-    msg = cl.Message(content=f"Processing `{file.name}`...")
-    await msg.send()
+#everything to 82
+ #   msg = cl.Message(content=f"Processing `{file.name}`...")
+  #  await msg.send()
 
     # Load and process the PDF
-    loader = PyMuPDFLoader(path)
-    loaded_pdf = loader.load()
+   # loader = PyMuPDFLoader(path)
+    #loaded_pdf = loader.load()
     
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=1000)
-    texts = text_splitter.split_documents(loaded_pdf)
-    print("Chunking ready")
+    #text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=1000)
+    #texts = text_splitter.split_documents(loaded_pdf)
+    #print("Chunking ready")
 
     # Use the previously defined embeddings
-    docsearch = Chroma.from_documents(texts, embeddings)
-    print("Embeddings Ready")
+    #docsearch = Chroma.from_documents(texts, embeddings)
+#    print("Embeddings Ready")
 
-    message_history = ChatMessageHistory()
+ #   message_history = ChatMessageHistory()
 
-    memory = ConversationBufferMemory(
-        memory_key="chat_history",
-        output_key="answer",
-        chat_memory=message_history,
-        return_messages=True,
-    )
+  #  memory = ConversationBufferMemory(
+   #     memory_key="chat_history",
+    #    output_key="answer",
+     #   chat_memory=message_history,
+      #  return_messages=True,
+    #)
+
 
     # Define agents
 
@@ -78,36 +89,36 @@ async def on_chat_start():
         role='LearningContentAnalyst',
         goal='Analyze content from PDF and provide brief summary for context.',
         backstory="You’re an expert in analyzing content in the uploaded materials and summarizing them so that they are easily digestible.",
-        tools=[],
-        llm=chat_model
+        tools=[pdf_search_tool],
+        llm=llm
     ),
         "Evaluator": Agent(
         role='Evaluator',
         goal='Evaluate the user’s answer and provide constructive feedback',
         backstory="You’re an expert in evaluating students’ prior knowledge based on the answers in the pre-test and providing suggestions to the QuestionGenerator during the test.",
         tools=[],
-        llm=chat_model
+        llm=llm
     ),
         "QuestionGenerator": Agent(
         role='QuestionGenerator',
         goal='Generate questions about the uploaded document to assess user understanding',
         backstory="You are an expert in generating questions based on the summary of the learning content for the week. You like to measure students' understanding of the learning materials with the right type of questions for specific learning content by comparing students' performance in the pre-test and post-test.",
         tools=[],
-        llm=chat_model
+        llm=llm
     ),
         "Facilitator": Agent(
         role='Facilitator',
         goal='Facilitate conversation with user to encourage active thinking and aid their understanding',
         backstory="You’re an expert in facilitating learning through asking questions related to the summary of the learning content and students’ pre-test performance. You like to encourage students’ active thinking with questions. You normally ask questions for three rounds of conversation and then provide explanations and examples if students still don’t understand.",
         tools=[],
-        llm=chat_model
+        llm=llm
     ),
         "SummaryExpert": Agent(
         role='SummaryExpert',
         goal='Summarize user conversation history and learning content',
         backstory="You’re an expert in summarizing the conversation history between students and the AI agents. Your summary incorporates the summary of the learning content with the record of students’ question answering. The summary can be supplemental materials for students to review later for their study.",
         tools=[],
-        llm=chat_model
+        llm=llm
     )
 }
 
