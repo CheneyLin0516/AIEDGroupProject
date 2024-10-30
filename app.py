@@ -23,10 +23,9 @@ embeddings = GoogleGenerativeAIEmbeddings(
     api_key=google_api_key
 )
 
-
 llm = ChatOpenAI(
     openai_api_base="https://api.groq.com/openai/v1",
-    openai_api_key=os.environ['GROQ_API_KEY'],
+    openai_api_key=os.environ['OPENAI_API_KEY'],
     model_name="llama3-8b-8192",
     temperature=0,
     max_tokens=1000,
@@ -35,6 +34,7 @@ llm = ChatOpenAI(
 #Test API key
 #GROQ_API_KEY=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
 #GOOGLE_API_KEY=AIzaSyCUU8pGrORw3LX9AJ0BciRozCgJX9K-T7k
+
 
 @cl.on_chat_start
 async def on_chat_start():
@@ -167,12 +167,49 @@ async def on_chat_start():
     Task(
         description="Based on interaction history and post-test evaluation, generate a final learning report and notes for the user.",
         expected_output="A PDF summary of learning content and performance feedback.",
-        agent=agents["Facilitator"]
+        agent=agents["SummaryExpert"]
     )
 ]
     # Create a crew to handle the sequential execution of tasks
     crew = Crew(
     agents=list(agents.values()),
+    tasks=tasks,
+    verbose=True,
+    process=Process.sequential
+)
+
+    # Hi, Chenny! Based on our Canva flow, we can have different crews and it can be as the following but not sure how to write them, 
+# just give you an idea of the devision of the crew. And we don't understand the other codes related to crew, please help adjust them too. 
+    crew_2 = Crew(
+    agents=agents["LearningContentAnalyst"],
+    tasks=tasks,
+    verbose=True,
+    process=Process.sequential
+)
+
+    crew_3 = Crew(
+    agents=agents["QuestionGenerator", "Evaluator"]
+    tasks=tasks,
+    verbose=True,
+    process=Process.sequential
+)
+
+    crew_4 = Crew(
+    agents=agents["Facilitator"]
+    tasks=tasks,
+    verbose=True,
+    process=Process.sequential
+)
+
+    crew_5 = Crew(
+    agents=agents["QuestionGenerator", "Evaluator"]
+    tasks=tasks,
+    verbose=True,
+    process=Process.sequential
+)
+
+    crew_6 = Crew(
+    agents=agents["SummaryExpert"]
     tasks=tasks,
     verbose=True,
     process=Process.sequential
