@@ -1,28 +1,10 @@
 from crewai import Agent, Task, Crew, Process
-from langchain_groq import ChatGroq
-from langchain.prompts import ChatPromptTemplate
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.chains import ConversationalRetrievalChain
-from langchain_community.chat_message_histories import ChatMessageHistory
-from langchain.memory import ConversationBufferMemory
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_community.document_loaders import PyMuPDFLoader
-from langchain_community.vectorstores import Chroma
 from crewai_tools import PDFSearchTool
-
 from langchain_openai import ChatOpenAI
-
-
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from textwrap import dedent
 import chainlit as cl
 import os
-
-# Initialize embeddings and chat model
-google_api_key = os.getenv("GOOGLE_API_KEY")
-embeddings = GoogleGenerativeAIEmbeddings(
-    model="models/embedding-001",
-    api_key=google_api_key
-)
-
 
 llm = ChatOpenAI(
     openai_api_base="https://api.groq.com/openai/v1",
@@ -33,6 +15,7 @@ llm = ChatOpenAI(
 )
 
 #Test API key
+#OPENAI_API_KEY=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
 #GROQ_API_KEY=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
 #GOOGLE_API_KEY=AIzaSyCUU8pGrORw3LX9AJ0BciRozCgJX9K-T7k
 
@@ -54,42 +37,15 @@ async def on_chat_start():
 
     file = files[0]
     path = file.path
-    pdf_search_tool = PDFSearchTool(pdf=path)
 
-#everything to 82
- #   msg = cl.Message(content=f"Processing `{file.name}`...")
-  #  await msg.send()
-
-    # Load and process the PDF
-   # loader = PyMuPDFLoader(path)
-    #loaded_pdf = loader.load()
-    
-    #text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=1000)
-    #texts = text_splitter.split_documents(loaded_pdf)
-    #print("Chunking ready")
-
-    # Use the previously defined embeddings
-    #docsearch = Chroma.from_documents(texts, embeddings)
-#    print("Embeddings Ready")
-
- #   message_history = ChatMessageHistory()
-
-  #  memory = ConversationBufferMemory(
-   #     memory_key="chat_history",
-    #    output_key="answer",
-     #   chat_memory=message_history,
-      #  return_messages=True,
-    #)
-
-
-    # Define agents
+# Define agents
 
     agents = {
         "LearningContentAnalyst": Agent(
         role='LearningContentAnalyst',
         goal='Analyze content from PDF and provide brief summary for context.',
         backstory="You’re an expert in analyzing content in the uploaded materials and summarizing them so that they are easily digestible.",
-        tools=[pdf_search_tool],
+        tools=[PDFSearchTool()],
         llm=llm
     ),
         "Evaluator": Agent(
@@ -180,7 +136,6 @@ async def on_chat_start():
 
     # Store crew and docsearch in user session for further use
     cl.user_session.set('crew', crew)
-    cl.user_session.set('docsearch', docsearch)  # Store the document search for reference
 
 @cl.on_message
 async def main(message: cl.Message):
