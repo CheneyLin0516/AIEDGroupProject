@@ -178,6 +178,36 @@ async def main(message: cl.Message):
             # Send final message
             await msg.update()
         cl.user_session.set("phase", "evaluation_facilitation")
+    if(cl.user_session.get("phase")=="evaluation_facilitation"):
+        evaluation_faciliation_crew = cl.user_session.get('evaluation_faciliation_crew')
+        question = message.content
+        crew_output = crew.kickoff()
+        for output in crew_output.tasks_output:
+            msg = cl.Message(content=output.raw,author=output.agent)
+            await msg.send()
+            # Send final message
+            await msg.update()
+        cl.user_session.set("phase", "evaluation_facilitation")
+    if(cl.user_session.get("phase")=="posttest"):
+        posttest_crew = cl.user_session.get('posttest_crew')
+        question = message.content
+        crew_output = crew.kickoff()
+        for output in crew_output.tasks_output:
+            msg = cl.Message(content=output.raw,author=output.agent)
+            await msg.send()
+            # Send final message
+            await msg.update()
+        cl.user_session.set("phase", "posttest")
+    if(cl.user_session.get("phase")=="summary"):
+        summary_crew = cl.user_session.get('summary_crew')
+        question = message.content
+        crew_output = crew.kickoff()
+        for output in crew_output.tasks_output:
+            msg = cl.Message(content=output.raw,author=output.agent)
+            await msg.send()
+            # Send final message
+            await msg.update()
+        cl.user_session.set("phase", "summary")
 
 
 
