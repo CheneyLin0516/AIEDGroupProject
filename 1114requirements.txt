@@ -1,0 +1,6 @@
+crewai 
+crewai-tools 
+langchain_openai 
+chainlit 
+langchain_huggingface
+langchain-groq

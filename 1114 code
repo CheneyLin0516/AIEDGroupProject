@@ -1,0 +1,185 @@
+import os
+from crewai import Agent, Task, Crew, Process
+from langchain_groq.chat_models import ChatGroq
+import chainlit as cl
+from crewai_tools import PDFSearchTool
+
+llm = ChatGroq(model_name="groq/llama3-70b-8192")
+
+def setup_rag_tool(pdf_path):
+    """Initialize RAG tool with the provided PDF"""
+    return PDFSearchTool(
+        pdf=pdf_path,
+        config=dict(
+            llm=dict(
+                provider="groq",
+                config=dict(
+                    base_url="https://api.groq.com/openai/v1",
+                    api_key=os.environ['GROQ_API_KEY'],
+                    model="groq/mixtral-8x7b-32768"
+                ),
+            ),
+            embedder=dict(
+                provider="huggingface",
+                config=dict(
+                    model="BAAI/bge-small-en-v1.5",
+                ),
+            ),
+        )
+    )
+@cl.on_chat_start
+async def on_chat_start():
+    """Initialize the chat session"""
+    await cl.Message(
+        content="# Welcome to PrepMaster! :rocket::robot_face:\nHere, you will be helped by a team of virtual experts to better prepare for the weekly AI Application course."
+    ).send()
+    # Ask for PDF upload
+    files = await cl.AskFileMessage(
+        content="Please upload your learning materials",
+        accept=["application/pdf"],
+        max_size_mb=20,
+    ).send()
+    # Initialize learning session
+    print("Files:", files)
+    rag_tool = setup_rag_tool(files[0].path)
+    # Create a classroom with a teacher and 5 students
+    learning_content_analyst= Agent(
+                role='LearningContentAnalyst',
+                goal='Analyze content from PDF and provide brief summary for context.',
+                backstory="You're an expert in analyzing content in the uploaded materials and summarizing the key points.",
+                tools=[rag_tool],
+                llm=llm
+            )
+    question_generator = Agent(
+                role='QuestionGenerator',
+                goal='Generate questions about the weekly learning material summary to assess the prior knowledge of the student',
+                backstory="You are an expert in generating questions based on the weekly summary of the learning material. You like to generate three key questions for the Pre-test Session to learn the prior knowledge of the students regarding the learning materials.",
+                tools=[],
+                llm=llm
+            )
+    evaluator = Agent(
+                role='Evaluator',
+                goal='Evaluate the answers from the student and provide constructive feedback',
+                backstory="You're an expert in evaluating student's prior knowledge based on their answers in the Pre-test Session and providing suggestions to the Facilitator for the Learning Session.",
+                tools=[],
+                llm=llm
+            )
+    facilitator = Agent(
+                role='Facilitator',
+                goal='Facilitate the Learning Session with the student to encourage active thinking',
+                backstory="You're an expert in facilitating personalized learning through asking questions based on the weekly summary of the learning material and the Pre-test Session evaluation report.",
+                tools=[],
+                llm=llm
+        )
+    summary_expert = Agent(
+                role='SummaryExpert',
+                goal='Summarize conversation history and learning content',
+                backstory="You're an expert in summarizing the conversation history between the student and the AI agents regarding student's strength, weakness, learning path, and ways for improvement.",
+                tools=[],
+                llm=llm
+            )
+    learning_content_analysis = Task(
+                description="Analyze the weekly learning materials and generate a summary.",
+                expected_output="A summary of the weekly learning materials with a list of key content.",
+                agent=learning_content_analyst
+            )
+    question_generation =Task( #crew 2
+                description="Generate questions for the Pre-test Session based on the weekly summary provided by LearningContentAnalyst.",
+                expected_output="A list of 3 pre-test questions.",
+                agent=question_generator
+            )
+    question_asking = Task( #crew 2
+                description="Ask the student the pre-test questions, and one question at a time.",
+                expected_output="A Pre-test Session report including the questions and student's answers.",
+                agent=question_generator
+            )
+    evaluation = Task( #crew 3
+                description="Evaluate Pre-test Session report and provide feedback on student's prior knowledge on the learning materials for Facilitator.",
+                expected_output="An pre-test evaluation report for Facilitator.",
+                agent=evaluator
+            )
+    facilitation = Task( #crew 3
+                description="Analyse Pre-test evaluation report, design learning content, and guide the student through the key learning points, allowing for user interaction.",
+                expected_output="A Learning Session report with key content explanations.",
+                agent=facilitator
+            )
+    post_question_generation = Task( #crew 4
+                description="Generate questions for Post-test Session based on the Learning Session report.",
+                expected_output="A list of 3 post-test questions.",
+                agent=question_generator
+            )
+    post_question_asking =Task( #crew 4
+                description="Ask the student the post-test questions, and one question at a time.",
+                expected_output="A Post-test Session report including the questions and student's answers.",
+                agent=question_generator
+            )
+    post_evaluation=Task( #crew 5
+                description="Evaluate Post-test Session report and summarize the learning path of the student.",
+                expected_output="A post-test evaluation report for SummaryExpert.",
+                agent=evaluator
+            )
+    summary=Task( #crew 5
+                description="Based on interaction history and post-test evaluation report, generate a final learning report for the student, including their strength, weakness, learning path, and ways for improvement.",
+                expected_output="A learning summary",
+                agent=summary_expert
+            )
+    analysis_crew = Crew(
+        agents=[learning_content_analyst],
+        tasks=[learning_content_analysis],
+        verbose=True,
+        process= Process.sequential,
+    )
+    pretest_crew= Crew(
+                agents=[question_generator],
+                tasks=[question_generation, question_asking],
+                process=Process.sequential
+            )
+    evaluation_facilitation_crew = Crew(
+                agents=[evaluator, facilitator],
+                tasks=[evaluation, facilitation],
+                process=Process.sequential
+            )
+    posttest_crew = Crew(
+                agents=[question_generator],
+                tasks=[post_question_generation, post_question_asking],
+                process=Process.sequential
+            )
+    summary_crew = Crew(
+                agents=[evaluator, summary_expert],
+                tasks=[post_evaluation, summary],
+                process=Process.sequential
+            )
+    cl.user_session.set('analysis_crew', analysis_crew)
+    cl.user_session.set('pretest_crew', pretest_crew)
+    cl.user_session.set('evaluation_facilitation_crew', evaluation_facilitation_crew)
+    cl.user_session.set('posttest_crew', posttest_crew)
+    cl.user_session.set('summary_crew', summary_crew)
+    cl.user_session.set('phase',"analysis")
+    await cl.Message(content=f"Tell me to start", author="Crew").send()
+@cl.on_message
+async def main(message: cl.Message):
+    if(cl.user_session.get("phase")=="analysis"):
+        crew = cl.user_session.get('analysis_crew')
+        question = message.content
+        crew_output = crew.kickoff()
+        for output in crew_output.tasks_output:
+            msg = cl.Message(content=output.raw,author=output.agent)
+            await msg.send()
+            # Send final message
+            await msg.update()
+        cl.user_session.set("phase", "pretest")
+    if(cl.user_session.get("phase")=="pretest"):
+        crew_pretest = cl.user_session.get('pretest_crew')
+        question = message.content
+        crew_output = crew_pretest.kickoff()
+        for output in crew_output.tasks_output:
+            msg = cl.Message(content=output.raw,author=output.agent)
+            await msg.send()
+            # Send final message
+            await msg.update()
+        cl.user_session.set("phase", "evaluation_facilitation")
+
+
+
+
+
