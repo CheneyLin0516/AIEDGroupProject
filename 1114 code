@@ -45,82 +45,82 @@ async def on_chat_start():
     # Create a classroom with a teacher and 5 students
     learning_content_analyst= Agent(
                 role='LearningContentAnalyst',
-                goal='Analyze content from PDF and provide brief summary for context.',
-                backstory="You're an expert in analyzing content in the uploaded materials and summarizing the key points.",
+                goal='Analyze content from the uploaded PDF and generate a concise summary focusing on weekly objectives, key terms, and main ideas.',
+                backstory="You are an expert in educational content analysis with a deep understanding of academic materials. Your role is to distill complex readings into actionable summaries that highlight the weekly objectives, essential keywords, and core concepts.",
                 tools=[rag_tool],
                 llm=llm
             )
     question_generator = Agent(
                 role='QuestionGenerator',
-                goal='Generate questions about the weekly learning material summary to assess the prior knowledge of the student',
-                backstory="You are an expert in generating questions based on the weekly summary of the learning material. You like to generate three key questions for the Pre-test Session to learn the prior knowledge of the students regarding the learning materials.",
+                goal='Create thought-provoking questions for both the pre-test and post-test sessions to assess and enhance the student’s understanding of the weekly learning material.',
+                backstory="You excel in crafting questions that encourage critical thinking and reflection. You design three targeted pre-test questions to gauge baseline knowledge and three post-test questions that require students to explain main ideas in their own words, aligned with the weekly objectives.",
                 tools=[],
                 llm=llm
             )
     evaluator = Agent(
                 role='Evaluator',
-                goal='Evaluate the answers from the student and provide constructive feedback',
-                backstory="You're an expert in evaluating student's prior knowledge based on their answers in the Pre-test Session and providing suggestions to the Facilitator for the Learning Session.",
+                goal='Assess student responses to both pre-test and post-test questions and provide constructive feedback.',
+                backstory="You specialize in evaluating student learning with a focus on clarity, accuracy, and encouragement. Your role is to provide feedback that highlights what the student has understood well and areas where further improvement is needed, ensuring a supportive tone.",
                 tools=[],
                 llm=llm
             )
     facilitator = Agent(
                 role='Facilitator',
-                goal='Facilitate the Learning Session with the student to encourage active thinking',
-                backstory="You're an expert in facilitating personalized learning through asking questions based on the weekly summary of the learning material and the Pre-test Session evaluation report.",
+                goal='Guide the student through a personalized learning session to deepen understanding of the weekly material.',
+                backstory="You are an expert in facilitating engaging and interactive learning experiences. You craft three explanations and activities based on the pre-test evaluation to address gaps in understanding while reinforcing strengths, using a positive and approachable tone.",
                 tools=[],
                 llm=llm
         )
     summary_expert = Agent(
                 role='SummaryExpert',
-                goal='Summarize conversation history and learning content',
-                backstory="You're an expert in summarizing the conversation history between the student and the AI agents regarding student's strength, weakness, learning path, and ways for improvement.",
+                goal='Generate a comprehensive summary of the student’s learning experience, including strengths, weaknesses, learning progress, and recommendations for improvement.',
+                backstory="Generate a comprehensive summary of the student’s learning experience, including strengths, weaknesses, learning progress, and recommendations for improvement.",
                 tools=[],
                 llm=llm
             )
     learning_content_analysis = Task(
-                description="Analyze the weekly learning materials and generate a summary.",
-                expected_output="A summary of the weekly learning materials with a list of key content.",
+                description="Analyze the weekly learning materials and generate a summary focusing on weekly objectives, key terms, and main ideas.",
+                expected_output="A concise summary highlighting weekly objectives, essential keywords, and main ideas from the learning materials.",
                 agent=learning_content_analyst
             )
     question_generation =Task( #crew 2
-                description="Generate questions for the Pre-test Session based on the weekly summary provided by LearningContentAnalyst.",
-                expected_output="A list of 3 pre-test questions.",
+                description="Generate three questions for the pre-test session based on the summary provided by the LearningContentAnalyst.",
+                expected_output="A message saying 'Here are three pre-test questions for you.' And a set of three thought-provoking pre-test questions designed to assess the student’s baseline knowledge.",
                 agent=question_generator
             )
     question_asking = Task( #crew 2
-                description="Ask the student the pre-test questions, and one question at a time.",
-                expected_output="A Pre-test Session report including the questions and student's answers.",
+                description="Sequentially present the pre-test questions to the student, one question at a time. Record the student’s response to each question before moving on to the next.",
+                expected_output="A report containing the pre-test questions and the student’s individual responses.",
                 agent=question_generator
             )
     evaluation = Task( #crew 3
-                description="Evaluate Pre-test Session report and provide feedback on student's prior knowledge on the learning materials for Facilitator.",
-                expected_output="An pre-test evaluation report for Facilitator.",
+                description="Evaluate the pre-test session report and provide feedback on the student’s baseline knowledge for the Facilitator.",
+                expected_output="A pre-test evaluation report summarizing the student’s understanding, including strengths and areas for improvement.",
                 agent=evaluator
             )
     facilitation = Task( #crew 3
-                description="Analyse Pre-test evaluation report, design learning content, and guide the student through the key learning points, allowing for user interaction.",
-                expected_output="A Learning Session report with key content explanations.",
+                description="Analyze the pre-test evaluation report, design a tailored learning session, and guide the student through key points with opportunities for interaction.",
+                expected_output="A learning session report detailing the key concepts and explanations provided to the student.",
                 agent=facilitator
             )
     post_question_generation = Task( #crew 4
-                description="Generate questions for Post-test Session based on the Learning Session report.",
-                expected_output="A list of 3 post-test questions.",
+                description="Generate three questions for the post-test session based on the learning session report.",
+                expected_output="A message saying 'Here are three post-test questions for you.' And a set of three post-test questions designed to evaluate the student’s grasp of key concepts.",
                 agent=question_generator
             )
     post_question_asking =Task( #crew 4
-                description="Ask the student the post-test questions, and one question at a time.",
-                expected_output="A Post-test Session report including the questions and student's answers.",
+                description="Sequentially present the post-test questions to the student, one question at a time. Record the student’s response to each question before moving on to the next.",
+                expected_output="A report containing the post-test questions and the student’s individual responses.",
                 agent=question_generator
             )
     post_evaluation=Task( #crew 5
-                description="Evaluate Post-test Session report and summarize the learning path of the student.",
-                expected_output="A post-test evaluation report for SummaryExpert.",
+                description="Evaluate the post-test session report and summarize the student’s progress and understanding for the SummaryExpert.",
+                expected_output="A post-test evaluation report highlighting strengths, areas needing reinforcement, and learning progress.",
                 agent=evaluator
             )
     summary=Task( #crew 5
-                description="Based on interaction history and post-test evaluation report, generate a final learning report for the student, including their strength, weakness, learning path, and ways for improvement.",
-                expected_output="A learning summary",
+                description="Synthesize the interaction history and post-test evaluation report to generate a final learning summary for the student.",
+                expected_output="A detailed learning summary that includes the student’s strengths, weaknesses, learning path, and recommendations for improvement.",
                 agent=summary_expert
             )
     analysis_crew = Crew(
