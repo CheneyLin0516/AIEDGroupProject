@@ -164,10 +164,6 @@ async def on_chat_start():
     cl.user_session.set('posttest_crew', posttest_crew)
     cl.user_session.set('summary_crew', summary_crew)
     cl.user_session.set('phase', "analysis")
-    cl.user_session.set('phase', "pretest")
-    cl.user_session.set("phase", "evaluation_facilitation")
-    cl.user_session.set("phase", "posttest")
-    cl.user_session.set("phase", "summary")
     await cl.Message(content=f"Tell me to start", author="Crew").send()
     
 @cl.on_message
