@@ -207,6 +207,8 @@ async def main(message: cl.Message):
             await msg.send()
             await msg.update()
         cl.user_session.set("phase", "pretest")
+        await cl.Message(content="Type 'start' to begin the pretest session.").send()
+
     elif(cl.user_session.get("phase")=="pretest"):
         crew = cl.user_session.get('pretest_crew')
         question = message.content
@@ -218,6 +220,8 @@ async def main(message: cl.Message):
             await msg.send()
             await msg.update()
         cl.user_session.set("phase", "evaluation_facilitation")
+        await cl.Message(content="Thank you for your answers.")
+
     elif(cl.user_session.get("phase")=="evaluation_facilitation"):
         crew = cl.user_session.get('evaluation_facilitation_crew')
         question = message.content
@@ -228,6 +232,8 @@ async def main(message: cl.Message):
             await msg.send()
             await msg.update()
         cl.user_session.set("phase", "posttest")
+        await cl.Message(content="Are you ready for a few questions to review what you have learnt?")
+
     elif(cl.user_session.get("phase")=="posttest"):
         crew = cl.user_session.get('posttest_crew')
         question = message.content
@@ -238,6 +244,8 @@ async def main(message: cl.Message):
             await msg.send()
             await msg.update()
         cl.user_session.set("phase", "summary")
+        await cl.Message(content="Thank you for your answers.")
+        
     elif(cl.user_session.get("phase")=="summary"):
         crew = cl.user_session.get('summary_crew')
         question = message.content
@@ -248,7 +256,6 @@ async def main(message: cl.Message):
             await msg.send()
             await msg.update()
         await cl.Message(content="The learning session is complete. Feel free to add the Summary to your weekly note. Enjoy the coming class!").send() 
-
 
 
 
