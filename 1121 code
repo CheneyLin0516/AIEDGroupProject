@@ -3,8 +3,18 @@ from crewai import Agent, Task, Crew, Process
 from langchain_groq.chat_models import ChatGroq
 import chainlit as cl
 from crewai_tools import PDFSearchTool
+from chainlit import make_async
+from crewai_tools import tool
 
 llm = ChatGroq(model_name="groq/llama3-70b-8192")
+
+@tool("Ask Human the question")
+def ask_human(question: str) -> str:
+    """Ask the question to the human user"""
+    human_response  = run_sync( cl.AskUserMessage(content=f"{question}",author="Teacher").send())
+    cl.Message(content=human_response).send()
+    if human_response:
+        return human_response["output"]
 
 def setup_rag_tool(pdf_path):
     """Initialize RAG tool with the provided PDF"""
@@ -48,7 +58,7 @@ async def on_chat_start():
     # Agents
     learning_content_analyst= Agent(
                 role='LearningContentAnalyst',
-                goal='Analyze content from the uploaded PDF and generate a concise summary focusing on weekly objectives, key terms, and main ideas.',
+                goal='Analyze content from the uploaded PDF and generate a summary.',
                 backstory="You are an expert in educational content analysis with a deep understanding of academic materials. Your role is to distill complex readings into actionable summaries that highlight the weekly objectives, essential keywords, and core concepts.",
                 tools=[rag_tool],
                 llm=llm
@@ -60,6 +70,13 @@ async def on_chat_start():
                 tools=[],
                 llm=llm
             )
+    questioner = Agent(
+                role='Questioner',
+                goal="Ask the human question one by one.",
+                backstory="You like to ask human questions one by one.",
+                tools=[ask_human],
+                llm=llm
+    )
     evaluator = Agent(
                 role='Evaluator',
                 goal='Assess student responses to both pre-test and post-test questions and provide constructive feedback.',
@@ -94,9 +111,10 @@ async def on_chat_start():
                 agent=question_generator
             )
     question_asking = Task( #crew 2
-                description="Sequentially present the pre-test questions to the student, one question at a time. Record the student’s response to each question before moving on to the next.",
+                description="Sequentially ask the pre-test questions to the human, one question at a time. Record the human response to each question before moving on to the next.",
                 expected_output="A report containing the pre-test questions and the student’s individual responses.",
-                agent=question_generator
+                agent=questioner,
+                tools=[ask_human]
             )
     evaluation = Task( #crew 3
                 description="Evaluate the pre-test session report and provide feedback on the student’s baseline knowledge for the Facilitator.",
@@ -131,14 +149,24 @@ async def on_chat_start():
     
     # Crews
     analysis_crew = Crew(
-        agents=[learning_content_analyst],
-        tasks=[learning_content_analysis],
-        verbose=True,
-        process= Process.sequential,
+                agents=[learning_content_analyst],
+                tasks=[learning_content_analysis],
+                verbose=True,
+                process= Process.sequential,
             )
     pretest_crew= Crew(
-                agents=[question_generator],
+                agents=[question_generator, questioner],
                 tasks=[question_generation, question_asking],
+                process=Process.sequential
+            )
+    pretest_generation_crew= Crew(
+                agents=[question_generator],
+                tasks=[question_generation],
+                process=Process.sequential
+            )
+    pretest_asking_crew= Crew(
+                agents=[questioner],
+                tasks=[question_asking],
                 process=Process.sequential
             )
     evaluation_facilitation_crew = Crew(
@@ -147,7 +175,7 @@ async def on_chat_start():
                 process=Process.sequential
             )
     posttest_crew = Crew(
-                agents=[question_generator],
+                agents=[question_generator, questioner],
                 tasks=[post_question_generation, post_question_asking],
                 process=Process.sequential
             )
@@ -165,59 +193,62 @@ async def on_chat_start():
     cl.user_session.set('summary_crew', summary_crew)
     cl.user_session.set('phase', "analysis")
     await cl.Message(content=f"Tell me to start", author="Crew").send()
-    
+
 @cl.on_message
 async def main(message: cl.Message):
     if(cl.user_session.get("phase")=="analysis"):
         crew = cl.user_session.get('analysis_crew')
         question = message.content              # what's this for? 
-        crew_output = crew.kickoff()
+        crew_call = make_async(crew.kickoff)
+        crew_output = await crew_call()
+        print (crew_output)
         for output in crew_output.tasks_output:
             msg = cl.Message(content=output.raw,author=output.agent)
             await msg.send()
-            # Send final message
             await msg.update()
         cl.user_session.set("phase", "pretest")
-    if(cl.user_session.get("phase")=="pretest"):
+    elif(cl.user_session.get("phase")=="pretest"):
         crew = cl.user_session.get('pretest_crew')
         question = message.content
+        crew_call = make_async(crew.kickoff)
+        #crew_output = await crew_call()
         crew_output = crew.kickoff()
         for output in crew_output.tasks_output:
             msg = cl.Message(content=output.raw,author=output.agent)
             await msg.send()
-            # Send final message
             await msg.update()
         cl.user_session.set("phase", "evaluation_facilitation")
-    if(cl.user_session.get("phase")=="evaluation_facilitation"):
+    elif(cl.user_session.get("phase")=="evaluation_facilitation"):
         crew = cl.user_session.get('evaluation_facilitation_crew')
         question = message.content
-        crew_output = crew.kickoff()
+        crew_call = make_async(crew.kickoff)
+        crew_output = await crew_call()
         for output in crew_output.tasks_output:
             msg = cl.Message(content=output.raw,author=output.agent)
             await msg.send()
-            # Send final message
             await msg.update()
         cl.user_session.set("phase", "posttest")
-    if(cl.user_session.get("phase")=="posttest"):
+    elif(cl.user_session.get("phase")=="posttest"):
         crew = cl.user_session.get('posttest_crew')
         question = message.content
-        crew_output = crew.kickoff()
+        crew_call = make_async(crew.kickoff)
+        crew_output = await crew_call()
         for output in crew_output.tasks_output:
             msg = cl.Message(content=output.raw,author=output.agent)
             await msg.send()
-            # Send final message
             await msg.update()
         cl.user_session.set("phase", "summary")
-    if(cl.user_session.get("phase")=="summary"):
+    elif(cl.user_session.get("phase")=="summary"):
         crew = cl.user_session.get('summary_crew')
         question = message.content
-        crew_output = crew.kickoff()
+        crew_call = make_async(crew.kickoff)
+        crew_output = await crew_call()
         for output in crew_output.tasks_output:
             msg = cl.Message(content=output.raw,author=output.agent)
             await msg.send()
-            # Send final message
             await msg.update()
         await cl.Message(content="The learning session is complete. Feel free to add the Summary to your weekly note. Enjoy the coming class!").send() 
+
 
 
 
