@@ -189,7 +189,7 @@ async def main(message: cl.Message):
             await msg.update()
         cl.user_session.set("phase", "evaluation_facilitation")
     if(cl.user_session.get("phase")=="evaluation_facilitation"):
-        crew = cl.user_session.get('evaluation_faciliation_crew')
+        crew = cl.user_session.get('evaluation_facilitation_crew')
         question = message.content
         crew_output = crew.kickoff()
         for output in crew_output.tasks_output:
