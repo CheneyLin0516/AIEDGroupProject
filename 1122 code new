@@ -1,0 +1,274 @@
+import os
+from crewai import Agent, Task, Crew, Process
+from langchain_groq.chat_models import ChatGroq
+import chainlit as cl
+from crewai_tools import PDFSearchTool
+from chainlit import make_async
+from crewai_tools import tool
+from chainlit import run_sync
+
+llm = ChatGroq(model_name="groq/llama3-70b-8192")
+
+@tool("Ask Human the question")
+def ask_human(question: str) -> str:
+    """Ask the question to the human user"""
+    human_response  = run_sync( cl.AskUserMessage(content=f"{question}",author="Teacher").send())
+    cl.Message(content=human_response).send()
+    if human_response:
+        return human_response["output"]
+
+def setup_rag_tool(pdf_path):
+    """Initialize RAG tool with the provided PDF"""
+    return PDFSearchTool(
+        pdf=pdf_path,
+        config=dict(
+            llm=dict(
+                provider="groq",
+                config=dict(
+                    base_url="https://api.groq.com/openai/v1",
+                    api_key=os.environ['GROQ_API_KEY'],
+                    model="groq/mixtral-8x7b-32768"
+                ),
+            ),
+            embedder=dict(
+                provider="huggingface",
+                config=dict(
+                    model="BAAI/bge-small-en-v1.5",
+                ),
+            ),
+        )
+    )
+@cl.on_chat_start
+async def on_chat_start():
+    """Initialize the chat session"""
+    await cl.Message(
+        content="# Welcome to PrepMaster! :rocket::robot_face:\nHere, you will be helped by a team of virtual experts to better prepare for the weekly course."
+    ).send()
+    
+    # Ask for PDF upload
+    files = await cl.AskFileMessage(
+        content="Please upload your weekly learning materials",
+        accept=["application/pdf"],
+        max_size_mb=20,
+    ).send()
+    
+    # Initialize learning session
+    print("Files:", files)
+    rag_tool = setup_rag_tool(files[0].path)
+    
+    # Agents
+    learning_content_analyst= Agent(
+                role='LearningContentAnalyst',
+                goal='Analyze content from the uploaded PDF and generate a summary.',
+                backstory="You are an expert in educational content analysis with a deep understanding of academic materials. Your role is to distill complex readings into actionable summaries that highlight the weekly objectives, essential keywords, and core concepts. If there are not objectives, do not include them",
+                tools=[rag_tool],
+                llm=llm
+            )
+    question_generator = Agent(
+                role='QuestionGenerator',
+                goal='For the pre-test and post-test sessions, generate open-ended or multiple-choice questions to measure the human understanding about the essential keywords and core concepts determined by the LearningContentAnalyst.',
+                backstory="You like to craft questions that encourage critical thinking based on the learning analysis to gauge the human's baseline knowledge and understanding.",
+                tools=[],
+                llm=llm
+            )
+    questioner = Agent(
+                role='Questioner',
+                goal="Ask the human questions one by one. Does not ask the same or similar question",
+                backstory="You like to ask human questions and only ask one question at a time.",
+                tools=[ask_human],
+                llm=llm
+    )
+    evaluator = Agent(
+                role='Evaluator',
+                goal='Assess student responses to both pre-test and post-test questions and provide constructive feedback.',
+                backstory="You like to evaluate and provide evaluation report for the facilitator for the learning session.",
+                tools=[],
+                llm=llm
+            )
+    facilitator = Agent(
+                role='Facilitator',
+                goal='Guide the student through a personalized learning session to deepen understanding of the uploaded PDF.',
+                backstory="You are an expert in facilitating engaging learning experiences. You craft three explanations based on the pre-test evaluation to address gaps in understanding while reinforcing strengths, using a positive and approachable tone.",
+                tools=[ask_human],
+                llm=llm
+        )
+    summary_expert = Agent(
+                role='SummaryExpert',
+                goal='Generate a comprehensive summary of the student’s learning experience, including strengths, weaknesses, learning progress, and recommendations for improvement.',
+                backstory="You're an expert in summarizing the conversation history between the student and the AI agents regarding student's strength, weakness, learning path, and ways for improvement.",
+                tools=[],
+                llm=llm
+            )
+    
+    # Tasks
+    learning_content_analysis = Task( #crew 1
+                description="Analyze the uploaded PDF and generate a summary focusing on weekly objectives, key terms, and main ideas.",
+                expected_output="A concise summary highlighting 3 weekly objectives, 3 essential keywords, and main ideas (100-150 words) from the learning materials.",
+                agent=learning_content_analyst
+            )
+    question_generation =Task( #crew 2
+                description="Generate a question about the essential keywords and main ideas for the pre-test session. Does not generate the same question.",
+                expected_output="A question readable by human",
+                agent=question_generator
+            )
+    question_asking = Task( #crew 2
+                description="Ask the question to the human user. Does not ask the same question",
+                expected_output="The answer from the human.",
+                agent=questioner,
+                tools=[ask_human]
+            )
+    evaluation = Task( #crew 2
+                description="Evaluate the given answer in a fair way.",
+                expected_output="The grade of human's understanding between 0 and 10, and the feedback on what was right or wrong and a list of resources to learn more about it",
+                agent=evaluator
+            )
+    facilitation = Task( #crew 3
+                description="Guide through a tailored learning session based on the grade and feedback, and interact with human through key points. Do not generate the same question.",
+                expected_output="Three questions asked one at a time, detailing the key concepts and explanations provided to the human.",
+                agent=facilitator,
+                tools=[ask_human]
+            )
+    post_question_generation = Task( #crew 4
+                description="Generate a question about about the essential keywords and main ideas for the post-test session. Do not generate the same question.",
+                expected_output="A question readable by human",
+                agent=question_generator
+            )
+    post_question_asking =Task( #crew 4
+                description="Ask the question to the human user.",
+                expected_output="The answer from the human.",
+                agent=questioner,
+                tools=[ask_human]
+            )
+    post_evaluation=Task( #crew 4
+                description="Evaluate the answer given in a fair way.",
+                expected_output="The grade of human's understanding between 0 and 10, and the feedback on what was right or wrong and a list of resources to learn more about it",
+                agent=evaluator
+            )
+    # summary=Task( #crew 5
+    #             description="Synthesize the interaction history and post-test evaluation report to generate a final learning summary for the student.",
+    #             expected_output="A detailed learning summary that includes the student’s strengths, weaknesses, learning path, and recommendations for improvement.",
+    #             agent=summary_expert
+    #         )
+
+    # Crews
+    analysis_crew = Crew(
+                agents=[learning_content_analyst],
+                tasks=[learning_content_analysis],
+                verbose=True,
+                process= Process.sequential,
+            )
+    pretest_crew = Crew(
+                agents=[question_generator, questioner, evaluator],
+                tasks=[question_generation, question_asking, evaluation],
+                verbose=True,
+                process=Process.sequential
+            )
+    facilitation_crew = Crew(
+                agents=[facilitator],
+                tasks=[facilitation],
+                verbose=True,
+                Process=Process.sequential
+    )
+    posttest_crew= Crew(
+                agents=[question_generator, questioner, evaluator],
+                tasks=[post_question_generation, post_question_asking, post_evaluation],
+                verbose=True,
+                process=Process.sequential
+            )
+    # pretest_generation_crew= Crew(
+    #             agents=[question_generator],
+    #             tasks=[question_generation],
+    #             process=Process.sequential
+    #         )
+    # pretest_asking_crew= Crew(
+    #             agents=[questioner],
+    #             tasks=[question_asking],
+    #             process=Process.sequential
+    #         )
+    # evaluation_facilitation_crew = Crew(
+    #             agents=[evaluator, facilitator],
+    #             tasks=[evaluation, facilitation],
+    #             process=Process.sequential
+    #         )
+    # posttest_crew = Crew(
+    #             agents=[question_generator, questioner],
+    #             tasks=[post_question_generation, post_question_asking],
+    #             process=Process.sequential
+    #         )
+    # summary_crew = Crew(
+    #             agents=[evaluator, summary_expert],
+    #             tasks=[post_evaluation, summary],
+    #             process=Process.sequential
+    #         )
+    
+    # User sessions 
+    cl.user_session.set('analysis_crew', analysis_crew)
+    cl.user_session.set('pretest_crew', pretest_crew)
+    cl.user_session.set('facilitation_crew', facilitation_crew)
+    cl.user_session.set('posttest_crew', posttest_crew)
+    # cl.user_session.set('summary_crew', summary_crew)
+    cl.user_session.set('phase', "analysis")
+    await cl.Message(content=f"PDF successfully analysed! Tell me to start", author="Crew").send()
+
+@cl.on_message
+async def main(message: cl.Message):
+    if(cl.user_session.get("phase")=="analysis"):
+        crew = cl.user_session.get('analysis_crew')
+        # question = message.content              # what's this for? 
+        crew_call = make_async(crew.kickoff)
+        crew_output = await crew_call()
+        print (crew_output)
+        for output in crew_output.tasks_output:
+            msg = cl.Message(content=output.raw,author=output.agent)
+            await msg.send()
+            await msg.update()
+        cl.user_session.set("phase", "pretest")
+        await cl.Message(content="Ready to check your current knowledge? Type 'start' to begin the Pretest Session.").send()
+
+    elif(cl.user_session.get("phase")=="pretest"):
+        crew = cl.user_session.get('pretest_crew')
+        # question = message.content
+        crew_call = make_async(crew.kickoff)
+        #crew_output = await crew_call()
+        crew_output = crew.kickoff()
+        for output in crew_output.tasks_output:
+            msg = cl.Message(content=output.raw,author=output.agent)
+            await msg.send()
+            await msg.update()
+        cl.user_session.set("phase", "facilitation")
+        await cl.Message(content="Thank you for your answers. Do you want to start the Learning Session?")
+
+    elif(cl.user_session.get("phase")=="facilitation"):
+        crew = cl.user_session.get('facilitation_crew')
+        # question = message.content
+        crew_call = make_async(crew.kickoff)
+        crew_output = await crew_call()
+        for output in crew_output.tasks_output:
+            msg = cl.Message(content=output.raw,author=output.agent)
+            await msg.send()
+            await msg.update()
+        cl.user_session.set("phase", "posttest")
+        await cl.Message(content="Are you ready for a question to review what you have learned?")
+
+    elif(cl.user_session.get("phase")=="posttest"):
+        crew = cl.user_session.get('posttest_crew')
+        # question = message.content
+        crew_call = make_async(crew.kickoff)
+        crew_output = await crew_call()
+        for output in crew_output.tasks_output:
+            msg = cl.Message(content=output.raw,author=output.agent)
+            await msg.send()
+            await msg.update()
+        # cl.user_session.set("phase", "summary")
+        await cl.Message(content="You've done well in this weekly preparation. Feel free to add the Summary to your weekly note. Enjoy the coming class!.")
+        
+    # elif(cl.user_session.get("phase")=="summary"):
+    #     crew = cl.user_session.get('summary_crew')
+    #     question = message.content
+    #     crew_call = make_async(crew.kickoff)
+    #     crew_output = await crew_call()
+    #     for output in crew_output.tasks_output:
+    #         msg = cl.Message(content=output.raw,author=output.agent)
+    #         await msg.send()
+    #         await msg.update()
+    #     await cl.Message(content="The learning session is complete. Feel free to add the Summary to your weekly note. Enjoy the coming class!").send()
